@@ -32,20 +32,25 @@ enum ConfigCommands {
     /// Add a new route
     Add {
         /// Prefix of the route
+        #[clap(short, long)]
         prefix: String,
         /// Target URL
+        #[clap(short, long)]
         target: String,
     },
     /// Edit an existing route
     Edit {
         /// Prefix of the route to edit
+        #[clap(short, long)]
         prefix: String,
         /// New target URL
+        #[clap(short, long)]
         target: String,
     },
     /// Delete an existing route
     Delete {
         /// Prefix to delete
+        #[clap(short, long)]
         prefix: String,
     },
 }
