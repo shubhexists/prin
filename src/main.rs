@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand};
+use clap::{Args, Parser, Subcommand};
 use colored::*;
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::{Confirm, Input, Select};
@@ -24,10 +24,17 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Start the reverse proxy server
-    Start,
+    Start(StartArgs),
     /// Configure the reverse proxy
     #[command(subcommand)]
     Config(ConfigCommands),
+}
+
+#[derive(Args)]
+struct StartArgs {
+    /// Specify the port to run the proxy server on (default: 8000)
+    #[arg(short, long, default_value_t = 8000)]
+    port: u16,
 }
 
 #[derive(Subcommand)]
@@ -193,6 +200,17 @@ fn delete_route(config: &mut ProxyConfig) -> Result<(), Box<dyn std::error::Erro
     Ok(())
 }
 
+fn list_routes(config: &ProxyConfig) {
+    if config.routes.is_empty() {
+        println!("{}", "⚠️ No routes configured.".red());
+    } else {
+        println!("{}", "\n🔗 Configured Routes:".yellow());
+        for (prefix, target) in &config.routes {
+            println!("{}", format!("✅ {} → {}", prefix, target).green());
+        }
+    }
+}
+
 async fn handle_request(
     client_ip: IpAddr,
     mut req: Request<Body>,
@@ -226,10 +244,11 @@ async fn handle_request(
 async fn main() {
     let cli = Cli::parse();
     match cli.command {
-        Commands::Start => {
+        Commands::Start(args) => {
             let config = Arc::new(load_config());
-            let bind_addr = "127.0.0.1:8000";
+            let bind_addr = format!("127.0.0.1:{}", args.port);
             let addr: SocketAddr = bind_addr.parse().expect("Could not parse ip:port.");
+            list_routes(&config);
 
             let make_svc = make_service_fn(move |conn: &AddrStream| {
                 let remote_addr = conn.remote_addr().ip();
@@ -243,7 +262,7 @@ async fn main() {
                 }
             });
 
-            println!("{}", format!("🚀 Running server on {}", addr).green());
+            println!("\n{}", format!("🚀 Running server on {}", addr).green());
             let server = Server::bind(&addr).serve(make_svc);
 
             if let Err(e) = server.await {
