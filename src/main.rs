@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use dialoguer::{Confirm, Input, Select};
 use hyper::server::conn::AddrStream;
 use hyper::service::{make_service_fn, service_fn};
 use hyper::{Body, Request, Response, Server, StatusCode};
@@ -12,7 +13,7 @@ use std::{convert::Infallible, net::SocketAddr, path::PathBuf};
 #[derive(Parser)]
 #[command(name = "Prin")]
 #[command(version = "1.0")]
-#[command(about = "A simple reverse proxy management CLI Tool", long_about = None)]
+#[command(about = "A simple reverse proxy CLI", long_about = None)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -22,7 +23,7 @@ struct Cli {
 enum Commands {
     /// Start the reverse proxy server
     Start,
-    /// Edit the configuration file
+    /// Configure the reverse proxy
     #[command(subcommand)]
     Config(ConfigCommands),
 }
@@ -30,29 +31,11 @@ enum Commands {
 #[derive(Subcommand)]
 enum ConfigCommands {
     /// Add a new route
-    Add {
-        /// Prefix of the route
-        #[clap(short, long)]
-        prefix: String,
-        /// Target URL
-        #[clap(short, long)]
-        target: String,
-    },
+    Add,
     /// Edit an existing route
-    Edit {
-        /// Prefix of the route to edit
-        #[clap(short, long)]
-        prefix: String,
-        /// New target URL
-        #[clap(short, long)]
-        target: String,
-    },
+    Edit,
     /// Delete an existing route
-    Delete {
-        /// Prefix to delete
-        #[clap(short, long)]
-        prefix: String,
-    },
+    Delete,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -98,12 +81,102 @@ fn save_config(config: &ProxyConfig) {
     fs::write(config_path, config_data).expect("Failed to write config file");
 }
 
+fn add_route(config: &mut ProxyConfig) -> Result<(), Box<dyn std::error::Error>> {
+    println!("\n=== Adding New Route ===");
+
+    let prefix: String = Input::new()
+        .with_prompt("Enter route prefix (e.g., /api)")
+        .interact_text()?;
+
+    let target: String = Input::new()
+        .with_prompt("Enter target URL (e.g., http://localhost:3000)")
+        .interact_text()?;
+
+    if Confirm::new()
+        .with_prompt(format!("Add route: {} → {}?", prefix, target))
+        .interact()?
+    {
+        config.routes.insert(prefix, target);
+        println!("Route added successfully!");
+    } else {
+        println!("Operation cancelled.");
+    }
+    Ok(())
+}
+
+fn edit_route(config: &mut ProxyConfig) -> Result<(), Box<dyn std::error::Error>> {
+    println!("\n=== Editing Route ===");
+
+    let routes: Vec<&String> = config.routes.keys().collect();
+    if routes.is_empty() {
+        println!("No routes found. Please add a route first.");
+        return Ok(());
+    }
+
+    let selection = Select::new()
+        .with_prompt("Select route to edit")
+        .items(&routes)
+        .interact()?;
+
+    let selected_prefix = routes[selection].clone();
+    let current_target = &config.routes[&selected_prefix];
+
+    println!("Current target: {}", current_target);
+    let new_target: String = Input::new()
+        .with_prompt("Enter new target URL")
+        .with_initial_text(current_target)
+        .interact_text()?;
+
+    if Confirm::new()
+        .with_prompt(format!(
+            "Update route {} → {}?",
+            selected_prefix, new_target
+        ))
+        .interact()?
+    {
+        config.routes.insert(selected_prefix.clone(), new_target);
+        println!("Route updated successfully!");
+    } else {
+        println!("Operation cancelled.");
+    }
+    Ok(())
+}
+
+fn delete_route(config: &mut ProxyConfig) -> Result<(), Box<dyn std::error::Error>> {
+    println!("\n=== Deleting Route ===");
+
+    let routes: Vec<&String> = config.routes.keys().collect();
+    if routes.is_empty() {
+        println!("No routes found. Nothing to delete.");
+        return Ok(());
+    }
+
+    let selection = Select::new()
+        .with_prompt("Select route to delete")
+        .items(&routes)
+        .interact()?;
+
+    let selected_prefix = routes[selection].clone();
+
+    if Confirm::new()
+        .with_prompt(format!("Delete route: {}?", selected_prefix))
+        .interact()?
+    {
+        config.routes.remove(&selected_prefix);
+        println!("Route deleted successfully!");
+    } else {
+        println!("Operation cancelled.");
+    }
+    Ok(())
+}
+
 async fn handle_request(
     client_ip: IpAddr,
     mut req: Request<Body>,
     config: Arc<ProxyConfig>,
 ) -> Result<Response<Body>, Infallible> {
     let path = req.uri().path();
+
     for (prefix, target) in &config.routes {
         if path.starts_with(prefix) {
             let new_path = &path[prefix.len()..];
@@ -147,35 +220,26 @@ async fn main() {
                 }
             });
 
-            let server = Server::bind(&addr).serve(make_svc);
             println!("Running server on {:?}", addr);
+            let server = Server::bind(&addr).serve(make_svc);
+
             if let Err(e) = server.await {
                 eprintln!("server error: {}", e);
             }
         }
         Commands::Config(config_command) => {
             let mut config = load_config();
-            match config_command {
-                ConfigCommands::Add { prefix, target } => {
-                    config.routes.insert(prefix, target);
-                }
-                ConfigCommands::Edit { prefix, target } => {
-                    if config.routes.contains_key(&prefix) {
-                        config.routes.insert(prefix, target);
-                    } else {
-                        println!("Route does not exist. Use: config add <prefix> <target>");
-                    }
-                }
-                ConfigCommands::Delete { prefix } => {
-                    if config.routes.remove(&prefix).is_some() {
-                        println!("Deleted route: {}", prefix);
-                    } else {
-                        println!("Route not found: {}", prefix);
-                    }
-                }
+            let result = match config_command {
+                ConfigCommands::Add => add_route(&mut config),
+                ConfigCommands::Edit => edit_route(&mut config),
+                ConfigCommands::Delete => delete_route(&mut config),
+            };
+
+            if let Err(e) = result {
+                eprintln!("Error: {}", e);
+            } else {
+                save_config(&config);
             }
-            save_config(&config);
-            println!("Configuration updated successfully.");
         }
     }
 }
