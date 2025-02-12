@@ -1,4 +1,6 @@
 use clap::{Parser, Subcommand};
+use colored::*;
+use dialoguer::theme::ColorfulTheme;
 use dialoguer::{Confirm, Input, Select};
 use hyper::server::conn::AddrStream;
 use hyper::service::{make_service_fn, service_fn};
@@ -64,12 +66,17 @@ fn load_config() -> ProxyConfig {
             .expect("Failed to serialize default config");
         fs::write(&config_path, config_data).expect("Failed to write default config file");
 
-        println!("Created new config file at {:?}", config_path);
+        println!(
+            "{}",
+            format!("✅ Created new config file at {:?}", config_path).green()
+        );
         return default_config;
     }
 
     let config_data = fs::read_to_string(&config_path)
         .unwrap_or_else(|_| panic!("Failed to read config file at {:?}", config_path));
+
+    println!("{}", "✅ Loaded configuration.".green());
     serde_json::from_str(&config_data).expect("Invalid config format")
 }
 
@@ -79,93 +86,109 @@ fn save_config(config: &ProxyConfig) {
     fs::create_dir_all(config_dir).expect("Failed to create config directory");
     let config_data = serde_json::to_string_pretty(config).expect("Failed to serialize config");
     fs::write(config_path, config_data).expect("Failed to write config file");
+
+    println!("{}", "💾 Configuration saved.".blue());
 }
 
 fn add_route(config: &mut ProxyConfig) -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n=== Adding New Route ===");
+    println!("{}", "\n=== Adding New Route ===".yellow());
 
     let prefix: String = Input::new()
-        .with_prompt("Enter route prefix (e.g., /api)")
+        .with_prompt("🔗 Enter route prefix (e.g., /api)")
         .interact_text()?;
 
     let target: String = Input::new()
-        .with_prompt("Enter target URL (e.g., http://localhost:3000)")
+        .with_prompt("🎯 Enter target URL (e.g., http://localhost:3000)")
         .interact_text()?;
 
     if Confirm::new()
-        .with_prompt(format!("Add route: {} → {}?", prefix, target))
+        .with_prompt(format!("⚡ Add route: {} → {}?", prefix, target))
         .interact()?
     {
-        config.routes.insert(prefix, target);
-        println!("Route added successfully!");
+        config.routes.insert(prefix.clone(), target.clone());
+        println!(
+            "{}",
+            format!("✅ Route added: {} → {}", prefix, target).green()
+        );
     } else {
-        println!("Operation cancelled.");
+        println!("{}", "❌ Operation cancelled.".red());
     }
     Ok(())
 }
 
 fn edit_route(config: &mut ProxyConfig) -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n=== Editing Route ===");
+    println!("{}", "\n=== Editing Route ===".yellow());
 
     let routes: Vec<&String> = config.routes.keys().collect();
     if routes.is_empty() {
-        println!("No routes found. Please add a route first.");
+        println!("{}", "⚠️ No routes found. Please add a route first.".red());
         return Ok(());
     }
 
-    let selection = Select::new()
-        .with_prompt("Select route to edit")
+    let selection = Select::with_theme(&ColorfulTheme::default())
+        .with_prompt("✏️ Select route to edit")
         .items(&routes)
         .interact()?;
 
     let selected_prefix = routes[selection].clone();
     let current_target = &config.routes[&selected_prefix];
 
-    println!("Current target: {}", current_target);
+    println!(
+        "{}",
+        format!("🔄 Current target: {}", current_target).cyan()
+    );
     let new_target: String = Input::new()
-        .with_prompt("Enter new target URL")
+        .with_prompt("📝 Enter new target URL")
         .with_initial_text(current_target)
         .interact_text()?;
 
     if Confirm::new()
         .with_prompt(format!(
-            "Update route {} → {}?",
+            "🔄 Update route {} → {}?",
             selected_prefix, new_target
         ))
         .interact()?
     {
-        config.routes.insert(selected_prefix.clone(), new_target);
-        println!("Route updated successfully!");
+        config
+            .routes
+            .insert(selected_prefix.clone(), new_target.clone());
+        println!(
+            "{}",
+            format!("✅ Route updated: {} → {}", selected_prefix, new_target).green()
+        );
     } else {
-        println!("Operation cancelled.");
+        println!("{}", "❌ Operation cancelled.".red());
     }
     Ok(())
 }
 
 fn delete_route(config: &mut ProxyConfig) -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n=== Deleting Route ===");
+    println!("{}", "\n=== Deleting Route ===".yellow());
 
     let routes: Vec<&String> = config.routes.keys().collect();
     if routes.is_empty() {
-        println!("No routes found. Nothing to delete.");
+        println!("{}", "⚠️ No routes found. Nothing to delete.".red());
         return Ok(());
     }
 
-    let selection = Select::new()
-        .with_prompt("Select route to delete")
+    let selection = Select::with_theme(&ColorfulTheme::default())
+        .with_prompt("🗑️ Select route to delete")
         .items(&routes)
         .interact()?;
 
     let selected_prefix = routes[selection].clone();
 
     if Confirm::new()
-        .with_prompt(format!("Delete route: {}?", selected_prefix))
+        .with_prompt(format!("⚠️ Delete route: {}?", selected_prefix))
         .interact()?
     {
         config.routes.remove(&selected_prefix);
-        println!("Route deleted successfully!");
+        println!(
+            "{}",
+            format!("✅ Route deleted: {}", selected_prefix).green()
+        );
     } else {
-        println!("Operation cancelled.");
+        println!("{}", "❌ Operation cancelled.".red());
     }
     Ok(())
 }
@@ -220,11 +243,11 @@ async fn main() {
                 }
             });
 
-            println!("Running server on {:?}", addr);
+            println!("{}", format!("🚀 Running server on {}", addr).green());
             let server = Server::bind(&addr).serve(make_svc);
 
             if let Err(e) = server.await {
-                eprintln!("server error: {}", e);
+                eprintln!("{}", format!("❌ Server error: {}", e).red());
             }
         }
         Commands::Config(config_command) => {
@@ -236,7 +259,7 @@ async fn main() {
             };
 
             if let Err(e) = result {
-                eprintln!("Error: {}", e);
+                eprintln!("{}", format!("❌ Error: {}", e).red());
             } else {
                 save_config(&config);
             }
