@@ -1,7 +1,14 @@
 [package]
-name = "proxy"
+name = "prin"
+description = "A simple reverse proxy terminal utility "
 version = "0.1.0"
 edition = "2021"
+repository = "https://github.com/shubhexists/prin"
+authors = ["Shubham singh   <github: github.com/shubhexists>"]
+license-file = "LICENSE"
+categories = ["Asynchronous", "Command line utilities"]
+keywords = ["Proxy", "cli"]
+readme = "README.md"
 
 [dependencies]
 hyper-reverse-proxy = "0.5"
