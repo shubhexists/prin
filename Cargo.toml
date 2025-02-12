@@ -6,7 +6,7 @@ edition = "2021"
 repository = "https://github.com/shubhexists/prin"
 authors = ["Shubham singh   <github: github.com/shubhexists>"]
 license-file = "LICENSE"
-categories = ["Asynchronous", "Command line utilities"]
+categories = ["asynchronous", "command-line-utilities"]
 keywords = ["Proxy", "cli"]
 readme = "README.md"
 
